@@ -1,0 +1,305 @@
+usage = {
+[=[
+=========================================================================== 
+trx                                                                        ]=],
+[=[
+    create  {flow_name}                                                    ]=],
+[=[
+    destroy {flow_name}                                                    ]=],
+[=[
+    set_tx  {flow_name} [port=port_name] 
+                        [rate=n[mbps|kbps]] [burst=npkt(0~1071480)]
+                        [pkt=pkt_name] [track=fd_name]                     ]=],
+[=[ 
+    set_rx  {flow_name} [port=port_name,port_name_2,...]
+                        [track_offset=nbyte|pkt_name.fd_name]              ]=],
+[=[
+    start   {flow_name}                                                    ]=],
+[=[
+    stop    {flow_name}                                                    ]=],
+[=[
+    snoop   {flow_name} {max=0~256}                                        ]=],
+[=[
+    dump    {flow_name}                                                    ]=],
+[=[
+    latency {flow_name} {start|stop|show}                                  ]=],
+[=[
+    show    [flow_name]                                                    ]=],
+[=[
+    cnt     [flow_name] [clear]                                            ]=],
+[=[
+  note: 
+    > flow_name could be specified as ".", alias of last valid flow_name
+===========================================================================]=]
+}
+
+local usage_idx = {
+  ["create"]  = 2,
+  ["destroy"] = 3,
+  ["set_tx"]  = 4,
+  ["set_rx"]  = 5,
+  ["start"]   = 6,
+  ["stop"]    = 7,
+  ["snoop"]   = 8,
+  ["dump"]    = 9,
+  ["latency"] = 10,
+  ["show"]    = 11,
+  ["cnt"]     = 12
+}
+
+function print_usage (op)
+
+  if nil~=op and nil~=usage_idx[op] then
+    print(usage[usage_idx[op]])
+  else
+    for i=1, #usage do
+      print(usage[i])
+    end
+  end
+  
+end
+
+function check_result (result_code, result_info)
+  if 0 ~= result_code then
+    print(result_info)
+    return false
+  end
+end
+
+flow_name = nil
+paras = nil
+
+function get_flow_name ()
+  local name = string.match(paras, " [%w_.]+ ")
+
+  if nil == name then
+    return nil
+  end
+
+  name = string.gsub(name," ","")
+  if "."==name and nil~=flow_name then
+    paras = string.gsub(paras,"%.","",1)
+    return flow_name
+  elseif "." ~= name then
+    flow_name = name
+    paras = string.gsub(paras,name,"",1)
+    return flow_name
+  else
+    return nil
+  end  
+end
+
+function flow_set_tx()
+
+  local t = {burst=0}
+
+  for k, v in string.gmatch(paras, " ([%w_]+)=([%w_.-]+) ") do
+    t[k]=v
+  end
+  
+  if nil ~= t.rate then
+    local rate,unit = string.match(t.rate, "(%d+)(%a+)")
+    if nil~=rate and nil~=unit then
+      paras = string.gsub(paras, "rate="..rate..unit, "", 1)
+      check_result(lua_c_trx_flow_set_tx_rate(flow_name,unit,tonumber(rate),tonumber(t.burst)))
+    else 
+      local rate = string.match(t.rate, "(%d+)")
+      if nil~=rate then
+        paras = string.gsub(paras, "rate="..rate, "", 1)
+        check_result(lua_c_trx_flow_set_tx_rate(flow_name,"mbps",tonumber(rate),tonumber(t.burst)))
+      end
+    end
+  end
+
+  paras = string.gsub(paras, "burst="..t.burst, "", 1)
+
+  if nil~=t.port then
+    check_result(lua_c_trx_flow_set_tx_port(flow_name,t.port))
+    paras = string.gsub(paras, "port="..t.port, "", 1)
+  end
+
+  if nil~=t.pkt and nil~=t.track then
+    check_result(lua_c_trx_flow_set_tx_pkt(flow_name,t.pkt, t.track))
+    paras = string.gsub(paras, "pkt="..t.pkt, "", 1)
+    paras = string.gsub(paras, "track="..t.track, "", 1)
+  end
+
+end
+
+
+function flow_set_rx()
+
+  --extract port
+  local ports={}
+  local port = string.match(paras, " port=([%w_/.,-]+) ")
+  if nil ~= port then
+
+    paras = string.gsub(paras, "port="..port, "", 1)
+    port = string.gsub(port,","," ")
+
+    local i = 1
+    if nil ~= port then
+      for p in string.gmatch(port, "([%w_/.-]+)") do
+        ports[i]=p
+        i=i+1
+        --print(p)
+      end
+    end
+
+    check_result(lua_c_trx_flow_set_rx_port(flow_name, ports))
+  end
+
+  local offset = string.match(paras, " track_offset=(%d+) ")
+  if nil ~= offset then
+    check_result(lua_c_trx_flow_set_rx_offset(flow_name, tonumber(offset)))
+    paras = string.gsub(paras, "track_offset="..offset, "", 1)
+  else
+    offset = string.match(paras, " track_offset=([%w_.-]+) ")
+    if nil ~= offset then
+      local pkt,field = string.match(offset, "([%w_-]+).([%w_.-]+)")
+      if nil ~= pkt and nil ~= field then
+        local r_code,r_val = lua_c_pkt_get_offset_bit(pkt,field)
+        if 0==r_code then
+          if 0==(r_val%8) then
+            paras = string.gsub(paras, "track_offset="..offset, "", 1)
+            check_result(lua_c_trx_flow_set_rx_offset(flow_name, r_val/8))
+          end
+        end
+      end
+    end
+  end
+
+end
+
+function flow_snoop ()
+
+  local max_cnt = string.match(paras, " max=(%d+) ")
+  
+  if nil==max_cnt then
+    return 1
+  else
+    paras = string.gsub(paras, "max="..max_cnt, "", 1)
+  end
+  
+  check_result(lua_c_rx_flow_snoop(flow_name, tonumber(max_cnt)))
+  
+end
+
+function flow_latency ()
+
+  local op = string.match(paras, " (%a+) ")
+
+  if nil ~= op then
+    paras = string.gsub(paras, op, "", 1)
+    if "start" == op then
+      check_result(lua_c_trx_flow_latency_start(flow_name))
+    elseif "stop" == op then
+      check_result(lua_c_trx_flow_latency_stop(flow_name))
+    elseif "show" == op then
+      check_result(lua_c_trx_flow_latency_show(flow_name))
+    else
+      return 1
+    end
+  else
+    return 1
+  end
+end
+
+function flow_show ()
+
+  if nil == get_flow_name() then
+    check_result(lua_c_trx_flow_show(""))
+  else
+    check_result(lua_c_trx_flow_show(flow_name))
+  end
+  
+end
+
+function flow_cnt ()
+
+  local str = string.match(paras, " clear ")
+  local clr = false
+  if nil ~= str then
+    paras = string.gsub(paras, " clear ", "", 1)
+    clr = true
+  end
+  
+  if nil == get_flow_name() then
+    check_result(lua_c_trx_flow_cnt("", clr))
+  else
+    check_result(lua_c_trx_flow_cnt(flow_name, clr))
+  end
+  
+end
+
+--------------------main--------------------
+function main (_paras)
+
+  paras = _paras
+  print(paras)
+  
+  if "" == paras then
+    print_usage()
+    return
+  end
+
+  --ensure enough space
+  paras = string.gsub(paras," ","  ")
+  paras = " " .. paras .. " "
+
+  local op = string.match(paras, " ([%a_]+) ")
+
+  if nil == op then
+    print_usage()
+    return
+  end
+
+  paras = string.gsub(paras,op,"",1)
+
+  if "show" == op then
+    flow_show()
+    return
+  end
+
+  if "cnt" == op then
+    flow_cnt()
+    return
+  end
+  
+  if nil == get_flow_name() then
+    print_usage(op)
+    return
+  end
+
+  if "create" == op then
+    check_result(lua_c_trx_flow_create(flow_name))
+  elseif "destroy" == op then
+    check_result(lua_c_trx_flow_destroy(flow_name))
+  elseif "set_tx" == op then
+    r = flow_set_tx()
+  elseif "set_rx" == op then
+    r = flow_set_rx()
+  elseif "start" == op then
+    check_result(lua_c_trx_flow_start(flow_name))
+  elseif "stop" == op then
+    check_result(lua_c_trx_flow_stop(flow_name))
+  elseif "snoop" == op then
+    r = flow_snoop()
+  elseif "dump" == op then
+    check_result(lua_c_trx_flow_dump(flow_name))
+  elseif "latency" == op then
+    flow_latency()
+  else
+    print_usage()
+  end
+
+  if string.match(paras, "^%s+") ~= paras and ""~=paras then
+    print("ignored string:",paras)
+  end
+
+  if 1==r then
+    print_usage(op)
+  end
+
+end
+

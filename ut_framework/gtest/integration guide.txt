@@ -1,0 +1,2 @@
+download package (by link presented in "architecture and integration.pdf"), unzip and copy code to here.
+follow the guide in source code, to make it ready.

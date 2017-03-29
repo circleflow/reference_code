@@ -1,0 +1,26 @@
+
+pkt create tpl_igmp_v2_join prototype=raw length=8
+pkt struct . append type(fixed size=8)
+pkt struct . append max_resp(fixed size=8)
+pkt struct . append chksum(cac func=ip_hdr_chksum filter=black)
+pkt struct . append group_addr(fixed size=32)
+pkt set . type=16
+pkt set . max_resp=64
+pkt set . group_addr=e0:1:1:1
+
+pkt create tpl_pkt_igmp_v2_join prototype=eth_ipv4
+pkt set . dst_mac=01:00:5e:00:00:01
+pkt set . src_mac=00:00:00:00:00:01
+pkt set . l3_payload.protocol=2
+pkt set . l3_payload.source_ip=1:1:1:1
+pkt set . l3_payload.destination_ip=e0:1:1:1
+
+pkt struct . extend pos=l3_payload.l4_payload pkt=tpl_igmp_v2_join
+pkt struct . insert pos=frame_checksum padding(fixed size=128)
+
+pkt show .
+
+echo ---note---
+echo pkt tpl_pkt_igmp_v2_join has been generated, pls copy it with proper name
+echo by default, it is set as type of join(16), could be changed to leave(17), query(11)
+echo the default group addres is set too

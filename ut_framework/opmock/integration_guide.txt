@@ -1,0 +1,14 @@
+opmock 0.9.1 is running well on my setup, 0.9.2 maybe well too (not verified).
+download package (by link presented in "architecture and integration.pdf"), choose the opmock1 part of code only.
+
+> follow opmock/scripts/make-release.sh to make excutable file
+
+> some extra steps required
+cp opmock/scripts/opmock.sh opmock
+cp opmock/scripts/refresh_tests.sh opmock
+
+#fix_ref_return.sh is used for fix the bug in case of mocking function with reference type of return value, keep it here.
+
+cd opmock/support
+make opmock.o
+

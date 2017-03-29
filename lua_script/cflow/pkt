@@ -1,0 +1,360 @@
+
+usage = {
+[=[
+===========================================================================
+pkt                                                                        ]=],
+[=[
+   create  {pkt_name} [prototype=eth_ipv4|eth_ipv6|eth_raw] [length=nbyte]
+                                   [vtag=1st_tag_name[,2nd_tag_name[...]]]
+                      [prototype=ipv4|ipv6|vtag|raw] [length=nbyte]        ]=],
+[=[
+   destroy {pkt_name}                                                      ]=],
+[=[
+   copy    {pkt_name} {copy_pkt_name}                                      ]=],
+[=[
+   set     {pkt_name} [fd_name=value
+                               (incr|decr step=value cnt=n [start=value])
+                               (random cnt=n)
+                               (pattern value)]                            ]=],
+[=[
+   struct  {pkt_name} [append new_fd_name(fixed size=nbit) 
+                                         (resizable size=nbyte)
+                                         (ipv4|ipv6 [size=nbyte])
+                                         (track|vtag)]
+                      [insert pos=fd_name new_fd_name(type size)]
+                      [remove pos=fd_name]
+                      [extend pos=fd_name pkt=pkt_name]
+                      [resize pos=fd_name size=nbyte]                      ]=],
+[=[
+   show    [pkt_name]                                                      ]=],
+[=[
+  note: 
+    > the first value in an optional list, is the default value.
+      for example, if "prototype" not specified, treated as "eth_ipv4".
+    > pkt_name could be specified as ".", for value of last full pkt_name
+    > field value should be formated as one of below(x: hex, d: decimal)
+      single byte: x, xx
+      multi bytes: xx-xx-xx... , xx:xx:xx...
+      ipv4 addr:   ddd.ddd.d.dd
+===========================================================================]=]
+}
+
+local usage_idx = {
+  ["create"]  = 2,
+  ["destroy"] = 3,
+  ["copy"]    = 4,
+  ["set"]     = 5,
+  ["struct"]  = 6,
+  ["show"]    = 7
+}
+
+function print_usage (op)
+
+  if nil~=op and nil~=usage_idx[op] then
+    print(usage[usage_idx[op]])
+  else
+    for i=1, #usage do
+      print(usage[i])
+    end
+  end
+  
+end
+
+function check_result (result_code, result_info)
+  if 0 ~= result_code then
+    print(result_info)
+    return false
+  else
+    return true
+  end
+end
+
+pkt_name = nil
+paras = nil
+
+function get_pkt_name ()
+
+  local name = string.match(paras, " [%w_.]+ ")
+
+  if nil == name then
+    return nil
+  end
+
+  name = string.gsub(name," ","")
+  if "."==name and nil~=pkt_name then
+    paras = string.gsub(paras,"%.","",1)
+    return pkt_name
+  elseif "." ~= name then
+    pkt_name = name
+    paras = string.gsub(paras,name,"",1)
+    return pkt_name
+  else
+    return nil
+  end  
+  
+end
+
+-----------------------------------------
+function pkt_create ()
+
+  local proto = string.match(paras, " prototype=([%w_]+) ")
+  if nil == proto then
+    proto = "eth_ipv4"
+  else
+    paras = string.gsub(paras, "prototype="..proto, "", 1)
+  end
+
+  local length = string.match(paras, " length=(%d+) ")
+  if nil == length then
+    length = 0
+  else
+    paras = string.gsub(paras, "length="..length, "", 1)
+    length = tonumber(length)
+  end
+
+  local eth = string.match(proto, "eth_(%w+)")
+  
+  if nil ~= eth then
+    if length < 64 then
+      length = 64;
+    end
+    
+    local vtags={}
+    local s = string.match(paras, " vtag=([%w_.,]+) ")
+    if nil ~= s then
+      print(s)
+      paras = string.gsub(paras, "vtag="..s, "", 1)
+      s = string.gsub(s,",","  ")
+      for v in string.gmatch(s, "([%w_.]+)") do
+        vtags[#vtags+1]=v
+        print(v)
+      end
+    end
+    
+    check_result(lua_c_pkt_create_eth(pkt_name, eth, length, vtags))
+  else
+    check_result(lua_c_pkt_create_raw(pkt_name, proto, length))
+  end
+end
+
+function pkt_copy ()
+  local copy_name = string.gsub(paras," ","")
+  if nil ~= copy_name then
+    paras = string.gsub(paras, copy_name, "", 1)
+    check_result(lua_c_pkt_copy(pkt_name, copy_name))
+  else
+    return 1
+  end
+end
+
+function pkt_set ()
+  local t={}
+  for k, v in string.gmatch(paras, " ([%w_.-]+)=%(([%w%s.:=-]+)%) ") do
+    t[#t+1] = k.."=%("..v.."%)"
+    local op = string.match(v, "^(%a+)")
+    
+    if "incr"==op or "decr"==op then
+      local is_increase
+      if "incr"==op then
+        is_increase = true
+      else
+        is_increase = false
+      end
+      
+      local step = string.match(v," step=([a-f%d.:-]+)")
+      if nil ~= step then
+        local cnt = string.match(v, " cnt=(%d+)")
+        if nil ~= cnt then
+          local start = string.match(v, " start=([a-f%d.:-]+)")
+          if nil == start then
+            start = ""
+          end
+          check_result(lua_c_pkt_set_step(pkt_name,k,is_increase,step,tonumber(cnt),start))
+        else
+          print("ignored string:",v)
+        end
+      else
+        print("ignored string:",v)
+      end
+      
+    elseif "random" == op then
+      local cnt = string.match(v, " cnt=(%d+)")
+      if nil ~= cnt then
+        check_result(lua_c_pkt_set_random(pkt_name,k,tonumber(cnt)))
+      else
+        print("ignored string:",v)
+      end
+      
+    elseif "pattern" == op then
+      local pattern = string.gsub(v,op,"",1)
+      pattern = string.match(pattern, " ([a-f%d.:-]+)")
+      if nil ~= pattern then
+        check_result(lua_c_pkt_set_pattern(pkt_name,k,pattern))
+      else
+        print("ignored string:",v)
+      end
+      
+    else
+      print("ignored string:",v)
+    end
+  end
+
+  for i=1, #t do
+    paras = string.gsub(paras,t[i],"",1)
+  end
+
+  t = {}
+  for k, v in string.gmatch(paras, " ([%w_.-]+)=([a-f%d.:-]+) ") do
+    t[#t+1] = k.."="..v
+    check_result(lua_c_pkt_set_value(pkt_name,k,v))
+  end
+
+  for i=1, #t do
+    paras = string.gsub(paras,t[i],"",1)
+  end
+  
+end
+
+function extract_field()
+  local f_name,f_type,space,f_size = string.match(paras, " ([%w_]+)%(([%w_]+)(%s+)size=(%d+)%) ")
+
+  if nil == f_name then
+    f_name,f_type = string.match(paras, " ([%w_]+)%(([%w_]+)%) ")
+    if nil == f_name then
+      return
+    end
+    paras = string.gsub(paras, f_name.."%("..f_type.."%)", "", 1)
+    return f_name,f_type,0
+  else
+    paras = string.gsub(paras, f_name.."%("..f_type..space.."size="..f_size.."%)", "", 1)
+    return f_name,f_type,tonumber(f_size)
+  end
+end
+
+function pkt_struct()
+  local op = string.match(paras, " (%a+) ")
+
+  if nil == op then
+    return 1
+  end
+
+  paras = string.gsub(paras,op,"",1)
+
+  if "append" == op then
+    local f_name,f_type,f_size = extract_field()
+    if nil ~= f_name then
+      check_result(lua_c_pkt_field_append(pkt_name,f_name,f_type,f_size))
+      return
+    end
+  elseif "insert" == op then
+    local pos = string.match(paras, " pos=([%w_.]+) ")
+    if nil ~= pos then
+      paras = string.gsub(paras, "pos="..pos, "", 1)
+      local f_name,f_type,f_size = extract_field()
+      if nil ~= f_name then
+        check_result(lua_c_pkt_field_insert(pkt_name,pos,f_name,f_type,f_size))
+        return
+      end
+    end
+  elseif "remove" == op then
+    local pos = string.match(paras, " pos=([%w_.]+) ")
+    if nil ~= pos then
+      paras = string.gsub(paras, "pos="..pos, "", 1)
+      check_result(lua_c_pkt_field_remove(pkt_name,pos))
+      return
+    end
+  elseif "extend" == op then
+    local pos = string.match(paras, " pos=([%w_.]+) ")
+    if nil ~= pos then
+      paras = string.gsub(paras, "pos="..pos, "", 1)
+      local pkt = string.match(paras, " pkt=([%w_.]+) ")
+      if nil~=pkt then
+        paras = string.gsub(paras, "pkt="..pkt, "", 1)
+        check_result(lua_c_pkt_field_extend(pkt_name,pos,pkt))
+        return
+      end
+    end
+  elseif "resize" == op then
+    local pos = string.match(paras, " pos=([%w_.]+) ")
+    if nil ~= pos then
+      paras = string.gsub(paras, "pos="..pos, "", 1)
+      local size = string.match(paras, " size=(%d+) ")
+      if nil ~= size then
+        paras = string.gsub(paras, "size="..size, "", 1)
+        check_result(lua_c_pkt_field_resize(pkt_name,pos,tonumber(size)))
+        return
+      end
+    end
+  end
+  
+  return 1
+end
+
+function pkt_show ()
+
+  if nil == get_pkt_name() then
+    check_result(lua_c_pkt_show(""))
+  else
+    check_result(lua_c_pkt_show(pkt_name))
+  end
+  
+end
+
+--------------------main--------------------
+function main (_paras)
+
+  paras = _paras
+
+  if "" == paras then
+    print_usage()
+    return
+  end
+
+  --ensure enough space
+  paras = string.gsub(paras," ","  ")
+  paras = " " .. paras.." "
+
+  local op = string.match(paras, " (%a+) ")
+
+  if nil == op then
+    print_usage()
+    return
+  end
+
+  paras = string.gsub(paras,op,"",1)
+
+  if "show" == op then
+    pkt_show()
+    return
+  end
+
+  if nil == get_pkt_name(paras) then
+    print_usage(op)
+    return
+  end
+
+  local r
+  if "create" == op then
+    r = pkt_create()
+  elseif "copy" == op then
+    r = pkt_copy()
+  elseif "set" == op then
+    r = pkt_set()
+  elseif "struct" == op then
+    r = pkt_struct()
+  elseif "destroy" == op then
+    check_result(lua_c_pkt_destroy(pkt_name))
+  else
+    print_usage()
+    return
+  end
+
+  if string.match(paras, "^%s+")~=paras and ""~=paras then
+    print("ignored string:",paras)
+  end
+
+  if 1==r then
+    print_usage(op)
+  end
+end
+

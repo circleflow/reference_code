@@ -1,0 +1,235 @@
+usage = {
+[=[
+===========================================================================
+port:                                                                      ]=],
+[=[
+    status [port_name]                                                      ]=],
+[=[
+    cnt    [port_name] [clear]                                              ]=],
+[=[
+    set    {port_name} [itf=SFP|RJ45]
+                       [mode=(force duplex_speed [pause=disable|enable])
+                             (auto [duplex_speed_1[[,duplex_speed_2],...]] 
+                                                 [pause=disable|enable])]   ]=],
+[=[
+  note: 
+    > port_name could be specified as ".", alias of last valid port_name
+    > duplex_speed:   FD_10MB,  HD_10MB,     
+                      FD_100MB, HD_100MB,
+                      FD_1000MB,HD_1000MB,   
+                      FD_2500MB,HD_2500MB,
+                      FD_10GB,  HD_10GB
+      FD_100MB,FD_1000MB as default for auto mode
+
+===========================================================================]=]
+}
+
+local usage_idx = {
+  ["status"] = 2,
+  ["cnt"]  = 3,
+  ["set"]  = 4
+}
+
+function print_usage (op)
+
+  if nil~=op and nil~=usage_idx[op] then
+    print(usage[usage_idx[op]])
+  else
+    for i=1, #usage do
+      print(usage[i])
+    end
+  end
+  
+end
+
+function check_result (result_code, result_info)
+  if 0 ~= result_code then
+    print(result_info)
+    return false
+  else
+    return true
+  end
+end
+
+port_name = nil
+paras = nil
+
+function get_port_name ()
+
+  local name = string.match(paras, " ([%w_.]+) ")
+
+  if nil == name then
+    return nil
+  end
+
+  if "."==name and nil~=port_name then
+    paras = string.gsub(paras,"%.","",1)
+    return port_name
+  elseif "." ~= name then
+    port_name = name
+    paras = string.gsub(paras,name,"",1)
+    return port_name
+  else
+    return nil
+  end  
+  
+end
+
+function extract_pause(pause)
+  if "disable"==pause then
+    return false
+  elseif "enable" == pause then
+    return true
+  elseif nil == pause then
+    return false
+  else
+    print("invalid value pause="..pause..", treated as pause=disable")
+    return false
+  end
+end
+
+function port_set ()
+
+  local itf = string.match(paras, " itf=(%w+) ")
+  if nil ~= itf then
+    paras = string.gsub(paras, "itf="..itf, "", 1)
+    check_result(lua_c_port_set_itf(port_name, string.upper(itf)))
+  end  
+
+  local w = string.match(paras, " mode=%(([%w%s_,=]+)%) ")
+  if nil ~= w then
+    paras = string.gsub(paras, "mode=%("..w.."%)", "", 1)
+    local op = string.match(w, "^(%a+)")
+    
+    if "force" == op then
+      w = string.gsub(w, op, "", 1)
+      local pause = string.match(w, " pause=(%a+)")
+
+      if nil ~= pause then
+        w = string.gsub(w, "pause="..pause, "", 1)
+      end
+      pause = extract_pause(pause)
+
+      local ds = string.match(w," ([%w_]+)")
+      if nil == ds then
+        print("duplex_speed is required")
+        return 1
+      else
+        w = string.gsub(w, ds, "", 1)
+      end
+      
+      check_result(lua_c_port_set_forced(port_name, string.upper(ds), pause))
+      
+    elseif "auto" == op then
+      w = string.gsub(w, op, "", 1)
+      local pause = string.match(w, " pause=(%a+)")
+      
+      if nil ~= pause then
+        w = string.gsub(w, "pause="..pause, "", 1)
+      end
+      pause = extract_pause(pause)
+
+      local ds_tab = {}
+      local ds_str = string.match(w, " ([%w_,]+)")
+      if nil == ds_str then
+        ds_tab = {"FD_100MB", "FD_1000MB"}
+      else
+        w = string.gsub(w,ds_str,"",1)
+        ds_str = string.gsub(ds_str, "," ," ")
+        for ds in string.gmatch(ds_str, "([%w_]+)") do
+          ds_tab[#ds_tab+1] = string.upper(ds)
+        end
+      end
+
+      check_result(lua_c_port_set_auto(port_name, ds_tab, pause))
+    end
+
+    if string.match(w, "^%s+")~=w and ""~=w then
+      print("invalid string:"..w)
+    end
+  end
+
+end
+
+function port_status ()
+
+  if nil == get_port_name() then
+    check_result(lua_c_port_status(""))
+  else
+    check_result(lua_c_port_status(port_name))
+  end
+  
+end
+
+function port_cnt ()
+  local str = string.match(paras, " clear ")
+  local clr = false
+  if nil ~= str then
+    paras = string.gsub(paras, " clear ", "", 1)
+    clr = true
+  end
+  
+  if nil == get_port_name() then
+    check_result(lua_c_port_cnt("", clr))
+  else
+    check_result(lua_c_port_cnt(port_name, clr))
+  end
+  
+end
+
+
+--------------------main--------------------
+function main (_paras)
+
+  paras = _paras
+
+  if "" == paras then
+    print_usage()
+    return
+  end
+
+  --ensure enough space
+  paras = string.gsub(paras," ","  ")
+  paras = " " .. paras.." "
+
+  local op = string.match(paras, " (%a+) ")
+
+  if nil == op then
+    print_usage()
+    return
+  end
+
+  paras = string.gsub(paras,op,"",1)
+
+  if "status" == op then
+    port_status()
+    return
+  elseif "cnt" == op then
+    port_cnt()
+    return
+  end
+
+  if nil == get_port_name(paras) then
+    print_usage(op)
+    return
+  end
+
+
+  local r
+  if "set" == op then
+    r = port_set()
+  else
+    print_usage()
+    return
+  end
+
+  if 1==r then
+    print_usage(op)
+  end
+
+  if string.match(paras, "^%s+")~=paras and ""~=paras then
+    print("ignored string:"..paras)
+  end
+
+end
+

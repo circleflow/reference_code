@@ -1,0 +1,39 @@
+usage = [=[
+===========================================================================
+pkt 
+     create/destroy/copy     - instance manipulation
+     set/struct              - content modification
+     show                    - intance/content display
+port
+     status                  - link/mode display
+     set                     - mode setup
+     cnt                     - transmit/receive counter 
+tx 
+     create/destroy          - instance manipulation
+     start/stop              - enable/disable functionaliy     
+     set                     - configuration
+     show                    - status
+     cnt                     - counters
+rx
+     create/destroy          - instance manipulation
+     start/stop              - enable/disable functionaliy
+     snoop/dump              - capture pkt and dump
+     set                     - configuration
+     show                    - status
+     cnt                     - counters
+trx
+     create/destroy          - instance manipulation
+     start/stop              - enable/disable functionaliy
+     snoop/dump              - capture pkt and dump
+     latency                 - latency measurement
+     set_tx/set_rx           - configuration
+     show                    - status
+     cnt                     - counters
+===========================================================================]=]
+
+function main (_paras)
+
+  print(usage)
+
+end
+
