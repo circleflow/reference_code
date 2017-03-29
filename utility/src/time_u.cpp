@@ -24,7 +24,13 @@ UINT32 impl_get_elapsed_ms()
 static
 UINT32 impl_max_elapsed_ms()
 {
-    return static_cast<UINT32>(milliseconds::max().count());
+    auto ms_max = milliseconds::max().count();
+
+    if(ms_max > UINT32_MAX) {
+        return UINT32_MAX;
+    } else {
+        return ms_max;
+    }
 }
 
 
