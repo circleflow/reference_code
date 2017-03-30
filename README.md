@@ -1,4 +1,5 @@
-= Copyright 2015-2017 circleflow.net
+# Copyright 2015-2017 circleflow.net
+
 This software allows for experimental purposes only, and does not allow for any commercial purposes.
 In no event shall the authors or copyright holders be liable for any claim, damages or other liability,
 whether in an action of contract, tort or otherwise, arising from, out or in connction with the software
