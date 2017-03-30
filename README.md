@@ -1,10 +1,9 @@
-=============================================
-Copyright 2015-2017 circleflow.net
+= Copyright 2015-2017 circleflow.net
 This software allows for experimental purposes only, and does not allow for any commercial purposes.
 In no event shall the authors or copyright holders be liable for any claim, damages or other liability,
 whether in an action of contract, tort or otherwise, arising from, out or in connction with the software
 or the use or other dealings in the software.
-=============================================
+***
 
 this is about a creative solution of network traffic analyzer device.  
 it is based on the ASIC ethernet switch chip on shelf, providing the wire line speed of pkts generation and capture.  
